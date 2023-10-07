@@ -1,8 +1,8 @@
 import express, { Request, Response } from "express";
-import { body, validationResult } from "express-validator";
-import { Jwt, sign } from "jsonwebtoken";
+import { body } from "express-validator";
+import { sign } from "jsonwebtoken";
 
-import { RequestValidationError } from "../errors/request-validation-error";
+import { validateRequest } from "../middlewares/validate-request";
 import { User } from "../models/user";
 import { BadRequestError } from "../errors/bad-request-error";
 
@@ -16,41 +16,37 @@ router.post("/api/users/signup", [
         .trim()
         .isLength({ min: 4, max: 20 })
         .withMessage("Password must be between 4 and 20 characters.")
-], async (req: Request, res: Response) => {
-    const errors = validationResult(req);
+],
+    validateRequest,
+    async (req: Request, res: Response) => {
+        const { email, password } = req.body;
 
-    if (!errors.isEmpty()) {
-        throw new RequestValidationError(errors.array());
-    }
+        const existingUser = await User.findOne({ email });
 
-    const { email, password } = req.body;
+        if (existingUser) {
+            // console.log("Email in use.");
+            // return res.send({});
+            throw new BadRequestError("Email in use.")
+        }
 
-    const existingUser = await User.findOne({ email });
+        const user = User.build({
+            email, password
+        })
 
-    if (existingUser) {
-        // console.log("Email in use.");
-        // return res.send({});
-        throw new BadRequestError("Email in use.")
-    }
+        // TODO: Generate JWT
+        const userJwt = sign({
+            id: user.id,
+            email: user.email
+        }, process.env.JWT_KEY!)
 
-    const user = User.build({
-        email, password
+        // TODO: Store it on session 
+        req.session = {
+            jwt: userJwt
+        }
+
+        await user.save();
+
+        res.status(201).send(user);
     })
-
-    // TODO: Generate JWT
-    const userJwt = sign({
-        id: user.id,
-        email: user.email
-    }, process.env.JWT_KEY!)
-
-    // TODO: Store it on session 
-    req.session = {
-        jwt: userJwt
-    }
-
-    await user.save();
-
-    res.status(201).send(user);
-})
 
 export { router as signupRouter };
